@@ -1,10 +1,15 @@
 from __future__ import absolute_import
 import contextlib
 
+import time
+
+import logging
 from kombu.transport import virtual
 from kombu import utils
 from stomp import exception as exc
+from stomp.exception import ConnectFailedException, NotConnectedException
 
+from kombu_stomp.stomp import EventTimeoutException, Watchdog
 from . import stomp
 
 
@@ -15,7 +20,7 @@ class Message(virtual.Message):
     keeps STOMP message ID for later use.
     """
 
-    def __init__(self, channel, raw_message):
+    def __init__(self, raw_message, channel):
         # we'll get a message ID only for incoming messages
         if isinstance(raw_message, tuple):
             raw_message, msg_id = raw_message
@@ -23,7 +28,7 @@ class Message(virtual.Message):
         else:
             self.msg_id = None
 
-        super(Message, self).__init__(channel, raw_message)
+        super(Message, self).__init__(raw_message, channel)
 
 
 class QoS(virtual.QoS):
@@ -57,18 +62,17 @@ class Channel(virtual.Channel):
         self._stomp_conn = None
         self._subscriptions = set()
 
-    def _get_many(self, queue, timeout=None):
+    def _poll(self, cycle, callback, timeout=None):
         """Get next messesage from current active queues.
 
         Note that we are ignoring any timeout due to performance
         issues.
         """
         with self.conn_or_acquire() as conn:
-            for q in queue:
-                self.subscribe(conn, q)
 
             # FIXME(rafaduran): inappropriate intimacy code smell
-            return next(conn.message_listener.iterator())
+            next_message, queue = next(conn.message_listener.iterator())
+            callback(next_message, queue)
 
     def _put(self, queue, message, **kwargs):
         with self.conn_or_acquire() as conn:
@@ -76,6 +80,7 @@ class Channel(virtual.Channel):
             conn.send(self.queue_destination(queue), body, **message)
 
     def basic_consume(self, queue, *args, **kwargs):
+
         with self.conn_or_acquire() as conn:
             self.subscribe(conn, queue)
 
@@ -164,6 +169,14 @@ class Channel(virtual.Channel):
             self.stomp_conn.disconnect()
         except exc.NotConnectedException:
             pass
+
+    def reset_subscriptions(self):
+        if len(self._subscriptions) > 0:
+            logging.info('_resubscribe_to_all')
+            subscriptions = self._subscriptions.copy()
+            self._subscriptions.clear()
+            for queue in subscriptions:
+                self.subscribe(self.stomp_conn, queue)
 
 
 class Transport(virtual.Transport):

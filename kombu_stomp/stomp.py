@@ -43,7 +43,10 @@ class MessageListener(listener.ConnectionListener):
                                'priority')]
         )
         # properties is a dictionary and we need evaluate it
-        message['properties'] = ast.literal_eval(message['properties'])
+        if 'properties' in message:
+            message['properties'] = ast.literal_eval(message['properties'])
+        else:
+            message['properties'] = {'delivery_tag': ''}
         message['body'] = body
         return (
             (message, msg_id),
