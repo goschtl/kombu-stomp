@@ -1,20 +1,29 @@
 from __future__ import absolute_import
 import ast
+import threading
 
 from six.moves import queue
 
 import stomp
 from stomp import listener
+from stomp.exception import ConnectFailedException
 
 
 class MessageListener(listener.ConnectionListener):
     """stomp.py listener used by ``kombu-stomp``"""
-    def __init__(self, prefix='', q=None):
+    def __init__(self, connected_event=threading.Event(), prefix='', q=None):
         if not q:
             q = queue.Queue()
 
         self.q = q
         self.prefix = prefix
+        self.connected_event = connected_event
+
+    def on_connected(self, headers, body):
+        self.connected_event.set()
+
+    def on_disconnected(self):
+        self.connected_event.clear()
 
     def on_message(self, headers, body):
         """Received message hook.
@@ -71,9 +80,19 @@ class MessageListener(listener.ConnectionListener):
         return destination.split('/queue/{0}'.format(self.prefix))[1]
 
 
+class StompTimeoutException(Exception):
+    pass
+
+
 class Connection(stomp.Connection10):
     """Connection object used by ``kombu-stomp``"""
     def __init__(self, prefix='', *args, **kwargs):
         super(Connection, self).__init__(*args, **kwargs)
-        self.message_listener = MessageListener(prefix=prefix)
+        self.connected_event = threading.Event()
+        self.message_listener = MessageListener(self.connected_event, prefix=prefix)
         self.set_listener('message_listener', self.message_listener)
+
+    def connect(self, wait=False, timeout=None, **kwargs):
+        super(Connection, self).connect(wait=False, **kwargs)
+        if wait and not self.connected_event.wait(timeout):
+            raise StompTimeoutException()

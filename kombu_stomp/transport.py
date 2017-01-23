@@ -1,15 +1,15 @@
 from __future__ import absolute_import
+
 import contextlib
+import os
+import socket
 
-import time
-
-import logging
-from kombu.transport import virtual
 from kombu import utils
+from kombu.transport import virtual
 from stomp import exception as exc
-from stomp.exception import ConnectFailedException, NotConnectedException
+from stomp.exception import ConnectFailedException
 
-from kombu_stomp.stomp import EventTimeoutException, Watchdog
+from kombu_stomp.stomp import StompTimeoutException
 from . import stomp
 
 
@@ -33,8 +33,10 @@ class Message(virtual.Message):
 
 class QoS(virtual.QoS):
     """Kombu quality of service class for ``kombu-stomp``."""
+
     def __init__(self, *args, **kwargs):
         self.ids = {}
+        self.prefetch_size = 0
         super(QoS, self).__init__(*args, **kwargs)
 
     def append(self, message, delivery_tag):
@@ -52,6 +54,10 @@ class QoS(virtual.QoS):
                 conn.ack(msg_id)
 
 
+class StompChannelException(Exception):
+    pass
+
+
 class Channel(virtual.Channel):
     """``kombu-stomp`` channel class."""
     QoS = QoS
@@ -63,13 +69,8 @@ class Channel(virtual.Channel):
         self._subscriptions = set()
 
     def _poll(self, cycle, callback, timeout=None):
-        """Get next messesage from current active queues.
 
-        Note that we are ignoring any timeout due to performance
-        issues.
-        """
         with self.conn_or_acquire() as conn:
-
             # FIXME(rafaduran): inappropriate intimacy code smell
             next_message, queue = next(conn.message_listener.iterator())
             callback(next_message, queue)
@@ -92,6 +93,7 @@ class Channel(virtual.Channel):
 
         self._subscriptions.add(queue)
         return conn.subscribe(self.queue_destination(queue),
+                              headers=self.exchange_headers(queue),
                               ack='client-individual')
 
     def queue_unbind(self,
@@ -110,21 +112,32 @@ class Channel(virtual.Channel):
             self._subscriptions.discard(queue)
 
     def queue_destination(self, queue):
-        return '/queue/{prefix}{name}'.format(prefix=self.prefix,
-                                              name=queue)
+        exchange = self.get_exchange(queue)
+        stomp_prefix = 'topic' if exchange['type'] == 'topic' else 'queue'
+        return '/{stomp_prefix}/{prefix}{name}'.format(stomp_prefix=stomp_prefix,
+                                                       prefix=self.prefix,
+                                                       name=queue)
 
     @contextlib.contextmanager
     def conn_or_acquire(self, disconnect=False):
         """Use current connection or create a new one."""
         if not self.stomp_conn.is_connected():
-            self.stomp_conn.start()
-            self.stomp_conn.connect(**self._get_conn_params())
+            self.connect()
 
         yield self.stomp_conn
 
         if disconnect:
             self.stomp_conn.disconnect()
             self.iterator = None
+
+    def connect(self):
+        try:
+            self.stomp_conn.start()
+            self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
+            self.reset_subscriptions()
+        except (ConnectFailedException, StompTimeoutException):
+            self.stomp_conn.stop()
+            raise StompChannelException()
 
     @property
     def stomp_conn(self):
@@ -153,13 +166,13 @@ class Channel(virtual.Channel):
                  self.connection.client.port or 61613)
             ],
             'reconnect_attempts_max': 1,
+            'auto_content_length': False
         }
 
     def _get_conn_params(self):
         return {
             'username': self.connection.client.userid,
             'passcode': self.connection.client.password,
-            'wait': True,
         }
 
     def close(self):
@@ -171,14 +184,45 @@ class Channel(virtual.Channel):
             pass
 
     def reset_subscriptions(self):
-        if len(self._subscriptions) > 0:
-            logging.info('_resubscribe_to_all')
-            subscriptions = self._subscriptions.copy()
-            self._subscriptions.clear()
-            for queue in subscriptions:
-                self.subscribe(self.stomp_conn, queue)
+        subscriptions = self._subscriptions.copy()
+        self._subscriptions.clear()
+        for queue in subscriptions:
+            self.subscribe(self.stomp_conn, queue)
+
+    def exchange_headers(self, queue):
+        exchange = self.get_exchange(queue)
+        headers = {}
+        if exchange['type'] == 'topic' and exchange['durable']:
+            headers['activemq.subscriptionName'] = os.getenv('KOMBU_CLIENT_ID', socket.gethostname())
+        if self.qos.prefetch_size > 0:
+            headers['activemq.prefetchSize'] = self.qos.prefetch_size
+        return headers
+
+    def get_exchange(self, queue):
+        (binding,) = self.connection.state.queue_bindings(queue)
+        return self.connection.state.exchanges[binding.exchange]
+
+    def basic_qos(self, prefetch_size=0, prefetch_count=0,
+                  apply_global=False):
+        self.qos.prefetch_size = prefetch_size
+        self.qos.prefetch_count = prefetch_count
 
 
 class Transport(virtual.Transport):
     """Transport class for ``kombu-stomp``."""
     Channel = Channel
+
+    recoverable_connection_errors = (StompChannelException,)
+
+    def establish_connection(self):
+        channel = self.create_channel(self)
+        channel.connect()
+        self._avail_channels.append(channel)
+        return self  # for drain events
+
+    def drain_events(self, connection, timeout=None):
+        try:
+            super(Transport, self).drain_events(connection, timeout)
+        except self.recoverable_connection_errors:
+            self.client.ensure_connection()
+

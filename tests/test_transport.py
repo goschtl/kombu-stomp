@@ -28,15 +28,15 @@ class MessageTests(unittest.TestCase):
         self.msg_id = 'msg-id'
 
     def test_init__raw_message_only(self):
-        message = transport.Message(self.channel, self.raw_message)
+        message = transport.Message(self.raw_message, self.channel)
         # The encode is required in Python 3, since kombu is doing it
         self.assertEqual(self.raw_message['body'].encode(), message.body)
         self.assertIsNone(message.msg_id)
 
     def test_init__raw_message_and_id(self):
         message = transport.Message(
-            self.channel,
             (self.raw_message, self.msg_id),
+            self.channel,
         )
         # The encode is required in Python 3, since kombu is doing it
         self.assertEqual(self.raw_message['body'].encode(), message.body)
@@ -93,6 +93,7 @@ class ChannelConnectionTests(unittest.TestCase):
             'client.password': self.passcode,
         })
         self.channel = transport.Channel(connection=self.connection)
+        self.channel.get_exchange = mock.Mock(return_value={'type': 'direct', 'durable': False})
         self.queue = 'queue'
 
     @mock.patch('kombu_stomp.stomp.Connection')
@@ -109,7 +110,7 @@ class ChannelConnectionTests(unittest.TestCase):
             pass
 
         conn.start.assert_called_once_with()
-        #conn.disconnect.assert_called_once_with()
+        # conn.disconnect.assert_called_once_with()
 
     @mock.patch('kombu_stomp.stomp.Connection')
     def test_conn_or_acquire__connect_if_not_connected(self, Connection):
@@ -121,6 +122,7 @@ class ChannelConnectionTests(unittest.TestCase):
             username=self.userid,
             passcode=self.passcode,
             wait=True,
+            timeout=10
         )
 
     @mock.patch('kombu_stomp.stomp.Connection')
@@ -139,6 +141,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         conn.disconnect.assert_called_once_with()
 
+    @unittest.skip('_get_many was removed')
     @mock.patch('kombu_stomp.transport.Channel.conn_or_acquire',
                 new_callable=mock.MagicMock)  # for the context manager
     def test_get_many(self, conn_or_acquire):
@@ -150,6 +153,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         self.assertSetEqual(self.channel._subscriptions, set([self.queue]))
 
+    @unittest.skip('_get_many was removed')
     @mock.patch('kombu_stomp.transport.Channel.conn_or_acquire',
                 new_callable=mock.MagicMock)  # for the context manager
     def test_get_many__return(self, conn_or_acquire):
@@ -182,7 +186,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         stomp_conn.subscribe.assert_called_once_with(
             '/queue/{0}'.format(self.queue),
-            ack='client-individual',
+            ack='client-individual', headers={}
         )
 
     @mock.patch('kombu.transport.virtual.Channel.basic_consume')
@@ -204,7 +208,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         self.connection.subscribe.assert_called_once_with(
             '/queue/{0}'.format(self.queue),
-            ack='client-individual',
+            ack='client-individual', headers={}
         )
 
     @mock.patch('kombu.transport.virtual.Channel.queue_unbind')

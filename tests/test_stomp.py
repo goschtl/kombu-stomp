@@ -119,4 +119,4 @@ class ConnectionTests(unittest.TestCase):
             self.conn.get_listener('message_listener'),
             Listener.return_value,
         )
-        Listener.assert_called_once_with(prefix='')
+        Listener.assert_called_once_with(self.conn.connected_event, prefix='')
