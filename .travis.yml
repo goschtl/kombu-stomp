@@ -3,23 +3,30 @@ language: python
 sudo: required
 
 python:
-    - 2.7
-    - 3.4
-    - 3.5
-    - 3.6
+- 2.7
+- 3.4
+- 3.5
+- 3.6
 
 services:
-  - docker
+- docker
 
 before_install:
-  - docker pull webcenter/activemq
-  - docker run -d -p 61613:61613 -e ACTIVEMQ_ENABLED_AUTH=false webcenter/activemq
+- docker pull webcenter/activemq
+- docker run -d -p 61613:61613 -e ACTIVEMQ_ENABLED_AUTH=false webcenter/activemq
 
 install:
-  - pip install -e .
-  - pip install -r requirements/tests.txt
-  - pip install coveralls
+- pip install -e .
+- pip install -r requirements/tests.txt
+- pip install coveralls
 
 script: py.test -v --cov kombu_stomp --cov-report html --cov-report=term-missing tests
 
 after_success: coveralls
+
+deploy:
+  provider: pypi
+  server: https://testpypi.python.org/pypi
+  user: pirronevi
+  password:
+    secure: KIz1KGJKO14MIlUjbtQzhwiVTGxNycaL1H7/0WsCksjDE2lfUhWw1rHUJ1/8KNyzAq8075B3VEGaX9vd3S5z9gEUY+720t6nBrF2QnsDro39klxgDSkWNeFgBR7/CsHIlCpqzvr49F8JOhNpJ+U7bVNzqWOCbMmZbSGa79c4/cKvQukcmJC0cjn7PGK7tOcLizHlaBhlnvRYLSH/A6PuzjnL0s1K0Ih8sPtlS9CeXHFwKxpNPwp5dzVCmEADKr9IQZZ8B45T8WGTC+KgOylLHUlZOVqjNyRRbfxXowbtQiLa6jm2snqbJxXOeSJU/xNm4NhQ7PSgKs0u4pS46fU2EzYZNNeRdLPAcQdvD0nHUTQMdGd2L6WN2u3DLA+sVolBZffqOSZHS+9bOcbOYw7TjcKJ6vuyPeLwARNIM0cvrpgkBl8SlNc29vmx6gPOr69ju0GpmSUUsLsDO9pz7uEp9bI9pzTwqfA6dVUTI+ydJhNqLNjWfWfCOOzDf51HWhD3hKFHjkENqvmVX+cttJOjau0eo1uCPrxfQQrBaWOJIk8O3QsW/eh11Xsu+r5YM9+UoQG1yVKPkO3r082jdi/Zqt/vDVjbIVYyeB7RUUW4l8R7G4aUgAHFlpmpzPT/CrNa+phpMYe+6iKjfHLf519oma9wqBH75YfINS7fFYBTZj4=

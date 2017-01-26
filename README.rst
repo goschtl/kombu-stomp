@@ -2,8 +2,9 @@ Introduction
 ============
 .. image:: https://travis-ci.org/sp4x/kombu-stomp.svg?branch=master
    :target: https://travis-ci.org/sp4x/kombu-stomp
-.. image:: https://coveralls.io/repos/sp4x/kombu-stomp/badge.png?branch=master
-   :target: https://coveralls.io/r/sp4x/kombu-stomp?branch=master
+.. image:: https://coveralls.io/repos/github/sp4x/kombu-stomp/badge.svg?branch=master
+   :target: https://coveralls.io/github/sp4x/kombu-stomp?branch=master
+
 
 This is project is an effort for adding STOMP protocol support to Kombu, mostly
 Celery oriented. You can find documentation at `Read the docs`_.
