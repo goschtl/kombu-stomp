@@ -16,6 +16,7 @@ def get_requirements(reqfile):
 
 
 setuptools.setup(
+    version='0.2.0',
     zip_safe=True,
     install_requires=get_requirements('requirements/base.txt'),
     tests_require=get_requirements('requirements/tests.txt'),

@@ -9,6 +9,7 @@ from kombu.transport import virtual
 from stomp import exception as exc
 from stomp.exception import ConnectFailedException
 
+from kombu_stomp import jms
 from kombu_stomp.stomp import StompTimeoutException
 from . import stomp
 
@@ -28,7 +29,13 @@ class Message(virtual.Message):
         else:
             self.msg_id = None
 
+        self.transformation = raw_message.get('transformation', None)
         super(Message, self).__init__(raw_message, channel)
+
+    @property
+    def payload(self):
+        decoded_body = super(Message, self).payload
+        return jms.convert_jms_to_python(decoded_body, self.transformation)
 
 
 class QoS(virtual.QoS):
@@ -94,6 +101,7 @@ class Channel(virtual.Channel):
         self._subscriptions.add(queue)
         return conn.subscribe(self.queue_destination(queue),
                               headers=self.exchange_headers(queue),
+                              transformation='jms-json',
                               ack='client-individual')
 
     def queue_unbind(self,
@@ -166,6 +174,7 @@ class Channel(virtual.Channel):
                  self.connection.client.port or 61613)
             ],
             'reconnect_attempts_max': 1,
+            'wait_on_receipt': True,
             'auto_content_length': False
         }
 
@@ -193,7 +202,7 @@ class Channel(virtual.Channel):
         exchange = self.get_exchange(queue)
         headers = {}
         if exchange['type'] == 'topic' and exchange['durable']:
-            headers['activemq.subscriptionName'] = os.getenv('KOMBU_CLIENT_ID', socket.gethostname())
+            headers['activemq.subscriptionName'] = os.getenv('KOMBU_SUBSCRIPTION_NAME', socket.gethostname())
         if self.qos.prefetch_size > 0:
             headers['activemq.prefetchSize'] = self.qos.prefetch_size
         return headers
@@ -225,4 +234,3 @@ class Transport(virtual.Transport):
             super(Transport, self).drain_events(connection, timeout)
         except self.recoverable_connection_errors:
             self.client.ensure_connection()
-

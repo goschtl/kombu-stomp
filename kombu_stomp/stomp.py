@@ -1,16 +1,16 @@
 from __future__ import absolute_import
+
 import ast
 import threading
 
-from six.moves import queue
-
 import stomp
+from six.moves import queue
 from stomp import listener
-from stomp.exception import ConnectFailedException
 
 
 class MessageListener(listener.ConnectionListener):
     """stomp.py listener used by ``kombu-stomp``"""
+
     def __init__(self, connected_event=threading.Event(), prefix='', q=None):
         if not q:
             q = queue.Queue()
@@ -56,6 +56,11 @@ class MessageListener(listener.ConnectionListener):
             message['properties'] = ast.literal_eval(message['properties'])
         else:
             message['properties'] = {'delivery_tag': ''}
+
+        if headers.get('transformation', None) == 'jms-map-json' and 'content-type' not in headers:
+            message['content-type'] = 'application/json'
+            message['content-encoding'] = 'binary'
+
         message['body'] = body
         return (
             (message, msg_id),
@@ -77,7 +82,7 @@ class MessageListener(listener.ConnectionListener):
 
     def queue_from_destination(self, destination):
         """Get the queue name from a destination header value."""
-        return destination.split('/queue/{0}'.format(self.prefix))[1]
+        return destination.split('/{0}'.format(self.prefix)).pop()
 
 
 class StompTimeoutException(Exception):
@@ -86,6 +91,7 @@ class StompTimeoutException(Exception):
 
 class Connection(stomp.Connection10):
     """Connection object used by ``kombu-stomp``"""
+
     def __init__(self, prefix='', *args, **kwargs):
         super(Connection, self).__init__(*args, **kwargs)
         self.connected_event = threading.Event()
