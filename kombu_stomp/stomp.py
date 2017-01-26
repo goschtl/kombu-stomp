@@ -41,29 +41,28 @@ class MessageListener(listener.ConnectionListener):
         :return dict: A dictionary that Kombu can use for creating a new
             message object.
         """
-        msg_id = headers['message-id']
-        message = dict(
-            [(header, value) for header, value in headers.items()
-             # Remove STOMP specific headers
-             if header not in ('destination',
-                               'timestamp',
-                               'message-id',
-                               'expires',
-                               'priority')]
-        )
+
+        message = {}
         # properties is a dictionary and we need evaluate it
-        if 'properties' in message:
-            message['properties'] = ast.literal_eval(message['properties'])
+        if 'properties' in headers:
+            message['properties'] = ast.literal_eval(headers['properties'])
         else:
             message['properties'] = {'delivery_tag': ''}
 
-        if headers.get('transformation', None) == 'jms-map-json' and 'content-type' not in headers:
+        if 'content-type' not in headers and headers.get('transformation') == 'jms-map-json':
             message['content-type'] = 'application/json'
             message['content-encoding'] = 'binary'
+        else:
+            message['content-type'] = headers.get('content-type')
+            message['content-encoding'] = headers.get('content-encoding')
 
         message['body'] = body
+        message['headers'] = dict(
+            [(header, value) for header, value in headers.items()
+             if header not in message]
+        )
         return (
-            (message, msg_id),
+            message,
             self.queue_from_destination(headers['destination']),
         )
 

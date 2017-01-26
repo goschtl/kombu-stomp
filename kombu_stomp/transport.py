@@ -22,20 +22,14 @@ class Message(virtual.Message):
     """
 
     def __init__(self, raw_message, channel):
-        # we'll get a message ID only for incoming messages
-        if isinstance(raw_message, tuple):
-            raw_message, msg_id = raw_message
-            self.msg_id = msg_id
-        else:
-            self.msg_id = None
-
-        self.transformation = raw_message.get('transformation', None)
         super(Message, self).__init__(raw_message, channel)
+        self.transformation = self.headers.get('transformation')
+        self.msg_id = self.headers.get('message-id')
 
-    @property
-    def payload(self):
-        decoded_body = super(Message, self).payload
-        return jms.convert_jms_to_python(decoded_body, self.transformation)
+    def decode(self):
+        if not self._decoded_cache:
+            self._decoded_cache = jms.convert_jms_to_python(self._decode(), self.transformation)
+        return self._decoded_cache
 
 
 class QoS(virtual.QoS):
@@ -186,11 +180,12 @@ class Channel(virtual.Channel):
 
     def close(self):
         super(Channel, self).close()
-        try:
-            # TODO (rafaduran): do we need unsubscribe all queues first?
-            self.stomp_conn.disconnect()
-        except exc.NotConnectedException:
-            pass
+        if self._stomp_conn:
+            try:
+                # TODO (rafaduran): do we need unsubscribe all queues first?
+                self._stomp_conn.disconnect()
+            except exc.NotConnectedException:
+                pass
 
     def reset_subscriptions(self):
         subscriptions = self._subscriptions.copy()

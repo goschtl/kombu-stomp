@@ -16,20 +16,19 @@ class MessageListenerTests(ListenerTestCase):
     def setUp(self):
         super(MessageListenerTests, self).setUp()
         self.headers = {
-            'content-type': 'application/json',
             'message-id': 'ID:services-55311-1412009732901-5:6816:-1:1:1',
+            'content-type': 'application/json',
             'content-encoding': 'utf-8',
             'properties': """{
-    'body_encoding': u'base64',
-        u'delivery_info': {
-            u'priority': 0,
-            'routing_key': u'simple_queue',
-            'exchange': u'simple_queue'
-        },
-        'delivery_mode': 2,
-        'delivery_tag': '423e3830-e67a-458d-9aa0-f58df4d01639'
-}""",
-
+                'body_encoding': u'base64',
+                u'delivery_info': {
+                    u'priority': 0,
+                    'routing_key': u'simple_queue',
+                    'exchange': u'simple_queue'
+                },
+                'delivery_mode': 2,
+                'delivery_tag': '423e3830-e67a-458d-9aa0-f58df4d01639'
+            }""",
             'destination': '/queue/simple_queue',
             'timestamp': 1412068081608,
             'expires': 0,
@@ -55,7 +54,7 @@ class MessageListenerTests(ListenerTestCase):
 
     def test_to_kombu_message__return_message_as_dict(self):
         self.assertDictEqual(
-            self.listener.to_kombu_message(self.headers, self.body)[0][0],
+            self.listener.to_kombu_message(self.headers, self.body)[0],
             {
                 'content-encoding': 'utf-8',
                 'content-type': 'application/json',
@@ -69,14 +68,15 @@ class MessageListenerTests(ListenerTestCase):
                     'delivery_mode': 2,
                     'delivery_tag': '423e3830-e67a-458d-9aa0-f58df4d01639'
                 },
+                'headers': {
+                     'destination': '/queue/simple_queue',
+                     'expires': 0,
+                     'message-id': 'ID:services-55311-1412009732901-5:6816:-1:1:1',
+                     'priority': 4,
+                     'timestamp': 1412068081608
+                },
                 'body': self.body,
             }
-        )
-
-    def test_to_kombu_message__return_message_id(self):
-        self.assertEqual(
-            self.listener.to_kombu_message(self.headers, self.body)[0][1],
-            'ID:services-55311-1412009732901-5:6816:-1:1:1',
         )
 
     def test_to_kombu_message__return_queue_name(self):

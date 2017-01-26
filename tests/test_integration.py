@@ -19,9 +19,18 @@ def jms_map_json(queue):
     stomp_connection = stomp.connect.StompConnection10()
     stomp_connection.start()
     stomp_connection.connect(wait=True)
-    body = {"map": {"entry": {"string": ["contentRecipientUuids", "UNSET"]}}}
+    body = {"map": {"entry": {"string": ["key", "value"]}}}
     stomp_connection.send('/queue/' + queue.queue.name, json.dumps(body), transformation='jms-map-json')
-    return {"contentRecipientUuids": "UNSET"}
+    return {"key": "value"}
+
+@pytest.fixture
+def custom_headers(queue):
+    headers = {"custom": "value"}
+    stomp_connection = stomp.connect.StompConnection10()
+    stomp_connection.start()
+    stomp_connection.connect(wait=True)
+    stomp_connection.send('/queue/' + queue.queue.name, '', headers=headers)
+    return headers
 
 
 @pytest.fixture
@@ -50,6 +59,17 @@ def test_json_transformation(jms_map_json, queue):
     message = queue.get(block=True, timeout=5)
     message.ack()
     assert message.payload == jms_map_json
+
+
+def test_headers(custom_headers, queue):
+    """
+    GIVEN: a message with custom headers sent to a queue
+    WHEN: it is fetched from the queue
+    THEN: the headers are accessible from the message class
+    """
+    message = queue.get(block=True, timeout=5)
+    message.ack()
+    assert message.headers['custom'] == custom_headers['custom']
 
 
 def test_topic(connection, topic_exchange):

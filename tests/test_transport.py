@@ -27,20 +27,10 @@ class MessageTests(unittest.TestCase):
         })
         self.msg_id = 'msg-id'
 
-    def test_init__raw_message_only(self):
+    def test_init__raw_message(self):
         message = transport.Message(self.raw_message, self.channel)
         # The encode is required in Python 3, since kombu is doing it
         self.assertEqual(self.raw_message['body'].encode(), message.body)
-        self.assertIsNone(message.msg_id)
-
-    def test_init__raw_message_and_id(self):
-        message = transport.Message(
-            (self.raw_message, self.msg_id),
-            self.channel,
-        )
-        # The encode is required in Python 3, since kombu is doing it
-        self.assertEqual(self.raw_message['body'].encode(), message.body)
-        self.assertEqual(message.msg_id, self.msg_id)
 
 
 class QoSTests(unittest.TestCase):
@@ -186,7 +176,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         stomp_conn.subscribe.assert_called_once_with(
             '/queue/{0}'.format(self.queue),
-            ack='client-individual', headers={}
+            ack='client-individual', headers={}, transformation='jms-json'
         )
 
     @mock.patch('kombu.transport.virtual.Channel.basic_consume')
@@ -208,7 +198,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         self.connection.subscribe.assert_called_once_with(
             '/queue/{0}'.format(self.queue),
-            ack='client-individual', headers={}
+            ack='client-individual', headers={}, transformation='jms-json'
         )
 
     @mock.patch('kombu.transport.virtual.Channel.queue_unbind')
@@ -253,9 +243,10 @@ class ChannelConnectionTests(unittest.TestCase):
     @mock.patch('kombu.transport.virtual.Channel.close')
     @mock.patch('kombu_stomp.stomp.Connection')
     def test_close__disconnect(self, Connection, close):
+        self.channel._stomp_conn = Connection
         self.channel.close()
 
-        Connection.return_value.disconnect.assert_called_once_with()
+        Connection.disconnect.assert_called_once_with()
 
     @mock.patch('kombu.transport.virtual.Channel.close')
     @mock.patch('kombu_stomp.stomp.Connection')
