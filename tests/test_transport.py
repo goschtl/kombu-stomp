@@ -227,11 +227,11 @@ class ChannelConnectionTests(unittest.TestCase):
                                                  conn_or_acquire,
                                                  queue_unbind):
         self.channel.subscribe(mock.MagicMock(), self.queue)
-        self.assertSetEqual(self.channel._subscriptions, set([self.queue]))
+        self.assertSetEqual(set(self.channel._subscriptions.keys()), set([self.queue]))
 
         self.channel.queue_unbind(self.queue)
 
-        self.assertSetEqual(self.channel._subscriptions, set())
+        self.assertSetEqual(set(self.channel._subscriptions.keys()), set())
 
     @mock.patch('kombu.transport.virtual.Channel.close')
     @mock.patch('kombu_stomp.stomp.Connection')
