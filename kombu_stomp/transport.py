@@ -67,7 +67,7 @@ class Channel(virtual.Channel):
     def __init__(self, *args, **kwargs):
         super(Channel, self).__init__(*args, **kwargs)
         self._stomp_conn = None
-        self._subscriptions = set()
+        self._subscriptions = {}
 
     def _poll(self, cycle, callback, timeout=None):
 
@@ -84,19 +84,20 @@ class Channel(virtual.Channel):
     def basic_consume(self, queue, *args, **kwargs):
 
         with self.conn_or_acquire() as conn:
-            self.subscribe(conn, queue)
+            self.subscribe(conn, queue, **kwargs)
 
         return super(Channel, self).basic_consume(queue, *args, **kwargs)
 
-    def subscribe(self, conn, queue):
-        if queue in self._subscriptions:
+    def subscribe(self, conn, queue, consumer_arguments={}, **kwargs):
+        if queue in self._subscriptions.keys():
             return
 
-        self._subscriptions.add(queue)
+        self._subscriptions[queue] = consumer_arguments
         return conn.subscribe(self.queue_destination(queue),
                               headers=self.exchange_headers(queue),
                               transformation='jms-json',
-                              ack='client-individual')
+                              ack='client-individual',
+                              **consumer_arguments)
 
     def queue_unbind(self,
                      queue,
@@ -111,7 +112,9 @@ class Channel(virtual.Channel):
                                           **kwargs)
         with self.conn_or_acquire() as conn:
             conn.unsubscribe(self.queue_destination(queue))
-            self._subscriptions.discard(queue)
+
+        if queue in self._subscriptions:
+            del self._subscriptions[queue]
 
     def queue_destination(self, queue):
         exchange = self.get_exchange(queue)
@@ -137,7 +140,7 @@ class Channel(virtual.Channel):
             self.stomp_conn.start()
             self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
             self.reset_subscriptions()
-        except (ConnectFailedException, StompTimeoutException):
+        except (ConnectFailedException, StompTimeoutException, ConnectionRefusedError):
             self.stomp_conn.stop()
             raise StompChannelException()
 
@@ -190,8 +193,8 @@ class Channel(virtual.Channel):
     def reset_subscriptions(self):
         subscriptions = self._subscriptions.copy()
         self._subscriptions.clear()
-        for queue in subscriptions:
-            self.subscribe(self.stomp_conn, queue)
+        for queue, consumer_arguments in subscriptions.items():
+            self.subscribe(self.stomp_conn, queue, consumer_arguments=consumer_arguments)
 
     def exchange_headers(self, queue):
         exchange = self.get_exchange(queue)
