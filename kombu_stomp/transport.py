@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import contextlib
 import os
 import socket
+import time
 
 from kombu import utils
 from kombu.transport import virtual
@@ -136,13 +137,17 @@ class Channel(virtual.Channel):
             self.iterator = None
 
     def connect(self):
-        try:
-            self.stomp_conn.start()
-            self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
-            self.reset_subscriptions()
-        except (ConnectFailedException, StompTimeoutException, ConnectionRefusedError):
-            self.stomp_conn.stop()
-            raise StompChannelException()
+        connected = False
+        while not connected:
+            try:
+                self.stomp_conn.start()
+                self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
+                connected = True
+                self.reset_subscriptions()
+            except StompTimeoutException:
+                self.stomp_conn.stop()
+            except ConnectFailedException:
+                time.sleep(10)
 
     @property
     def stomp_conn(self):
@@ -219,16 +224,8 @@ class Transport(virtual.Transport):
     """Transport class for ``kombu-stomp``."""
     Channel = Channel
 
-    recoverable_connection_errors = (StompChannelException,)
-
     def establish_connection(self):
         channel = self.create_channel(self)
         channel.connect()
         self._avail_channels.append(channel)
         return self  # for drain events
-
-    def drain_events(self, connection, timeout=None):
-        try:
-            super(Transport, self).drain_events(connection, timeout)
-        except self.recoverable_connection_errors:
-            self.client.ensure_connection()
