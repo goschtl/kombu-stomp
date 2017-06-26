@@ -1,17 +1,16 @@
 from __future__ import absolute_import
 
 import contextlib
-import os
 import socket
-import time
 
+import os
 from kombu import utils
 from kombu.transport import virtual
 from stomp import exception as exc
 from stomp.exception import ConnectFailedException
 
 from kombu_stomp import jms
-from kombu_stomp.stomp import StompTimeoutException
+from kombu_stomp.stomp import StompTimeoutException, StompDisconnectedException
 from . import stomp
 
 
@@ -53,11 +52,8 @@ class QoS(virtual.QoS):
         msg_id = self.ids.pop(delivery_tag, None)
         if msg_id:
             with self.channel.conn_or_acquire() as conn:
+                conn.ensure_connected()
                 conn.ack(msg_id)
-
-
-class StompChannelException(Exception):
-    pass
 
 
 class Channel(virtual.Channel):
@@ -65,33 +61,34 @@ class Channel(virtual.Channel):
     QoS = QoS
     Message = Message
 
-    def __init__(self, *args, **kwargs):
-        super(Channel, self).__init__(*args, **kwargs)
+    def __init__(self, connection, **kwargs):
+        super(Channel, self).__init__(connection, **kwargs)
         self._stomp_conn = None
-        self._subscriptions = {}
+        self._subscriptions = connection.subscriptions
 
     def _poll(self, cycle, callback, timeout=None):
 
         with self.conn_or_acquire() as conn:
+            conn.ensure_connected()
             # FIXME(rafaduran): inappropriate intimacy code smell
             next_message, queue = next(conn.message_listener.iterator())
             callback(next_message, queue)
 
     def _put(self, queue, message, **kwargs):
         with self.conn_or_acquire() as conn:
+            conn.ensure_connected()
             body = message.pop('body')
             conn.send(self.queue_destination(queue), body, **message)
 
     def basic_consume(self, queue, *args, **kwargs):
 
         with self.conn_or_acquire() as conn:
+            conn.ensure_connected()
             self.subscribe(conn, queue, **kwargs)
 
         return super(Channel, self).basic_consume(queue, *args, **kwargs)
 
     def subscribe(self, conn, queue, consumer_arguments={}, **kwargs):
-        if queue in self._subscriptions.keys():
-            return
 
         self._subscriptions[queue] = consumer_arguments
         return conn.subscribe(self.queue_destination(queue),
@@ -112,6 +109,7 @@ class Channel(virtual.Channel):
                                           arguments,
                                           **kwargs)
         with self.conn_or_acquire() as conn:
+            conn.ensure_connected()
             conn.unsubscribe(self.queue_destination(queue))
 
         if queue in self._subscriptions:
@@ -137,17 +135,16 @@ class Channel(virtual.Channel):
             self.iterator = None
 
     def connect(self):
-        connected = False
-        while not connected:
-            try:
-                self.stomp_conn.start()
-                self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
-                connected = True
-                self.reset_subscriptions()
-            except StompTimeoutException:
-                self.stomp_conn.stop()
-            except ConnectFailedException:
-                time.sleep(10)
+        try:
+            self.stomp_conn.start()
+            self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
+            self.reset_subscriptions()
+        except StompTimeoutException:
+            # from kombu.five import Empty
+            self.stomp_conn.stop()
+            raise StompDisconnectedException()
+        except ConnectFailedException:
+            raise StompDisconnectedException()
 
     @property
     def stomp_conn(self):
@@ -196,9 +193,7 @@ class Channel(virtual.Channel):
                 pass
 
     def reset_subscriptions(self):
-        subscriptions = self._subscriptions.copy()
-        self._subscriptions.clear()
-        for queue, consumer_arguments in subscriptions.items():
+        for queue, consumer_arguments in self._subscriptions.items():
             self.subscribe(self.stomp_conn, queue, consumer_arguments=consumer_arguments)
 
     def exchange_headers(self, queue):
@@ -220,12 +215,41 @@ class Channel(virtual.Channel):
         self.qos.prefetch_count = prefetch_count
 
 
+def with_failover(func):
+    def wrapper(self, *args, **kwargs):
+        while True:
+            try:
+                return func(self, *args, **kwargs)
+            except StompDisconnectedException:
+                self.maybe_switch_next()
+
+    return wrapper
+
+
 class Transport(virtual.Transport):
     """Transport class for ``kombu-stomp``."""
     Channel = Channel
 
+    def __init__(self, client, **kwargs):
+        super(Transport, self).__init__(client, **kwargs)
+        self._stomp_client = client
+        self._bound = False
+        self.subscriptions = {}
+
+    def maybe_switch_next(self):
+        self._stomp_client.maybe_switch_next()
+        self.client = self._stomp_client
+        if self._bound:
+            self.establish_connection()
+
+    @with_failover
     def establish_connection(self):
         channel = self.create_channel(self)
         channel.connect()
+        self._bound = True
         self._avail_channels.append(channel)
-        return self  # for drain events
+        return self
+
+    @with_failover
+    def drain_events(self, connection, timeout=None):
+        super(Transport, self).drain_events(connection, timeout)

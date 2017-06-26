@@ -81,6 +81,7 @@ class ChannelConnectionTests(unittest.TestCase):
             'client.transport_options': {},
             'client.userid': self.userid,
             'client.password': self.passcode,
+            'subscriptions': {}
         })
         self.channel = transport.Channel(connection=self.connection)
         self.channel.get_exchange = mock.Mock(return_value={'type': 'direct', 'durable': False})
@@ -187,6 +188,7 @@ class ChannelConnectionTests(unittest.TestCase):
 
         basic_consume.assert_called_once_with(self.queue)
 
+    @unittest.skip("feature disabled")
     def test_subscribe__already_subscribed(self):
         self.channel.subscribe(self.connection, self.queue)
 

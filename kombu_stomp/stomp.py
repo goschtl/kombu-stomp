@@ -8,6 +8,10 @@ from six.moves import queue
 from stomp import listener
 
 
+class StompDisconnectedException(Exception):
+    pass
+
+
 class MessageListener(listener.ConnectionListener):
     """stomp.py listener used by ``kombu-stomp``"""
 
@@ -96,6 +100,13 @@ class Connection(stomp.Connection10):
         self.connected_event = threading.Event()
         self.message_listener = MessageListener(self.connected_event, prefix=prefix)
         self.set_listener('message_listener', self.message_listener)
+
+    def is_connected(self):
+        return self.connected_event.is_set() and super(Connection, self).is_connected()
+
+    def ensure_connected(self):
+        if not self.is_connected():
+            raise StompDisconnectedException()
 
     def connect(self, wait=False, timeout=None, **kwargs):
         super(Connection, self).connect(wait=False, **kwargs)
