@@ -140,7 +140,8 @@ class Channel(virtual.Channel):
         connected = False
         while not connected:
             try:
-                self.stomp_conn.start()
+                #import pdb; pdb.set_trace()
+                #self.stomp_conn.start()
                 self.stomp_conn.connect(wait=True, timeout=10, **self._get_conn_params())
                 connected = True
                 self.reset_subscriptions()
@@ -176,7 +177,7 @@ class Channel(virtual.Channel):
                  self.connection.client.port or 61613)
             ],
             'reconnect_attempts_max': 1,
-            'wait_on_receipt': True,
+            #'wait_on_receipt': True,
             'auto_content_length': False
         }
 

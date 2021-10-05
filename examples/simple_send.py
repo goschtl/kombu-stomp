@@ -12,5 +12,5 @@ logging.basicConfig(level=logging.DEBUG)
 
 with Connection('stomp://localhost:61613') as conn:
     with conn.SimpleQueue('simple_queue') as queue:
-        # queue.put({'hello': 'world'}, serializer='json', compression='zlib')
+        queue.put({'hello': 'world'}, serializer='json', compression='zlib')
         queue.put({'hello': 'world'}, serializer='json')

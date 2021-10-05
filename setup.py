@@ -1,25 +1,27 @@
 import os
 
-from pip import download
-from pip import req
 import setuptools
 
-HERE = os.path.abspath(os.path.dirname(__file__))
 
+requires = [
+    'kombu',
+    'stomp.py==4.1.24',
+    'six',
+]
 
-def get_requirements(reqfile):
-    path = os.path.join(HERE, reqfile)
-    session = download.PipSession()
-    return set(
-        [dep.name for dep in req.parse_requirements(path, session=session)]
-    )
+test_requires = [
+    'mock',
+    'pytest',
+    'pytest-xdist',
+    'pytest-cov'
+]
 
 
 setuptools.setup(
     version='0.3.1',
     zip_safe=True,
-    install_requires=get_requirements('requirements/base.txt'),
-    tests_require=get_requirements('requirements/tests.txt'),
+    install_requires=requires,
+    tests_require=test_requires,
     setup_requires='d2to1',
     d2to1=True,
 )
